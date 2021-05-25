@@ -83,7 +83,7 @@ min_soc = float(params.loc[(params.Key == "llsoc") & (params.Tag == "Battery"), 
 
 # n_horizon = int(params.loc[(params.Key == "n") & (params.Tag == "Scenario"), 'Value'])
 # n_control = int(params.loc[(params.Key == "n_control") & (params.Tag == "Scenario"), 'Value'])
-n_horizon = 48
+n_horizon = 24
 n_control = 12
 
 raw_data = pd.read_csv("/Users/zhenhua/Desktop/price_data/hourly_timeseries_pjm_2019_200x.csv")
@@ -105,8 +105,8 @@ for i in range(len(data["Datetime (he)"])):
                                 (raw_data["Datetime (he)"] <= end_datetime_he_horizon)].reset_index(drop=True)
 
         # Apply mpc control optimization
-        power, soc_hs = run_optimization(daily_load=data_horizon.iloc[0:n_control],
-                                         energy_price=data_horizon["DA Price ($/kWh)"][0:n_control],
+        power, soc_hs = run_optimization(daily_load=data_horizon.iloc[0:n_horizon],
+                                         energy_price=data_horizon["DA Price ($/kWh)"][0:n_horizon],
                                          battery_size_kWh=battery_size, battery_power_kW=battery_power,
                                          min_soc=min_soc, max_soc=max_soc, current_soc=start_soc,
                                          one_way_efficiency=one_way_efficiency)
