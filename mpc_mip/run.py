@@ -5,6 +5,8 @@ import cvxpy as cp
 import json
 import os
 
+from mpc_mip.financial_analysis import calculate_finance
+
 
 def run_optimization(daily_load, load_price, charge_price, discharge_price, export_price,
                      battery_size_kWh, battery_power_kW, min_soc, max_soc, current_soc, one_way_efficiency,
@@ -138,11 +140,13 @@ def store_results(results, results_dict):
         json.dump(results_dict, f)
 
 
-def run_mpc(raw_data, battery_size_kWh, battery_power_kW, min_soc, max_soc, one_way_efficiency, demand_charge,
+def run_mpc(raw_data, location, customer_type, export_price_type,
+            battery_size_kWh, battery_power_kW, min_soc, max_soc, one_way_efficiency, demand_charge,
             start_soc, n_horizon, n_control):
     raw_data["Datetime (he)"] = pd.to_datetime(raw_data["Datetime (he)"])
     data = raw_data.copy(deep=True)
     start_datetime_he = data["Datetime (he)"][0]
+    initial_start_soc = start_soc
 
     raw_data_extra_days = raw_data.copy(deep=True).head(n_horizon)
     raw_data_extra_days["Datetime (he)"] = raw_data_extra_days["Datetime (he)"] + pd.offsets.DateOffset(years=1)
@@ -193,10 +197,10 @@ def run_mpc(raw_data, battery_size_kWh, battery_power_kW, min_soc, max_soc, one_
             # Append results
             datetime_he_mpc[i:i + n_control] = data_horizon["Datetime (he)"][0:n_control]
             load_mpc[i:i + n_control] = data_horizon["Site Load (kW)"][0:n_control]
-            load_price_mpc[i:i + n_control] = load_price_pred
-            charge_price_mpc[i:i + n_control] = charge_price_pred
-            discharge_price_mpc[i:i + n_control] = discharge_price_pred
-            export_price_mpc[i:i + n_control] = export_price_pred
+            load_price_mpc[i:i + n_control] = load_price_pred[0:n_control]
+            charge_price_mpc[i:i + n_control] = charge_price_pred[0:n_control]
+            discharge_price_mpc[i:i + n_control] = discharge_price_pred[0:n_control]
+            export_price_mpc[i:i + n_control] = export_price_pred[0:n_control]
 
             soc_mpc[i:i + n_control] = dispatch_results["battery_soc"][0:n_control]
             charge_mpc[i:i + n_control] = dispatch_results["battery_charge"][0:n_control]
@@ -235,16 +239,19 @@ def run_mpc(raw_data, battery_size_kWh, battery_power_kW, min_soc, max_soc, one_
     # Output results
     results_dict = {
         "key_params": {
+            "location": location,
+            "customer_type": customer_type,
+            "demand_charge": demand_charge,
+            "export_price": raw_data["export_price"][0],
+            "export_price_type": export_price_type,
             "battery_size_kWh": battery_size_kWh,
             "battery_power_kW": battery_power_kW,
             "min_soc": min_soc,
             "max_soc": max_soc,
             "one_way_efficiency": one_way_efficiency,
-            "demand_charge": demand_charge,
-            "start_soc": start_soc,
+            "start_soc": initial_start_soc,
             "n_horizon": n_horizon,
-            "n_control": n_control,
-            "export_price": raw_data["export_price"][0]
+            "n_control": n_control
         },
         "savings": {}
     }
@@ -271,8 +278,13 @@ def run_mpc(raw_data, battery_size_kWh, battery_power_kW, min_soc, max_soc, one_
                                                         results_dict["savings"]["battery_charge_cost"]
     results_dict["savings"]["battery_export_revenue"] = np.sum(results["export_price"] *
                                                                results["discharge_to_grid"])
-    results_dict["savings"]["total_profits"] = results_dict["savings"]["retail_profits"] +\
-                                               results_dict["savings"]["battery_export_revenue"]
+    results_dict["savings"]["total_profits"] = results_dict["savings"]["battery_retail_profits"] +\
+                                               results_dict["savings"]["battery_export_revenue"] + \
+                                               results_dict["savings"]["demand_charge_savings"]
+    results_dict["savings"]["irr"] = calculate_finance(battery_size_kWh=battery_size_kWh,
+                                                       battery_total_profits_per_year=results_dict["savings"]["total_profits"])[0]
+    results_dict["savings"]["npv"] = calculate_finance(battery_size_kWh=battery_size_kWh,
+                                                       battery_total_profits_per_year=results_dict["savings"]["total_profits"])[1]
 
     # Store results
     store_results(results, results_dict)
